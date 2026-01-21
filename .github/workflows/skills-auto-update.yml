@@ -1,0 +1,115 @@
+name: Skills Auto Update
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'scripts/**'
+      - 'references/**'
+      - 'assets/**'
+      - 'SKILL.md'
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  update-skills:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Validate skill structure
+      run: |
+        echo "Validating skill structure..."
+        if [ -f "SKILL.md" ]; then
+          echo "✅ SKILL.md exists"
+          grep -q "name:" SKILL.md && echo "✅ Name field present"
+          grep -q "description:" SKILL.md && echo "✅ Description field present"
+        else
+          echo "❌ SKILL.md missing"
+          exit 1
+        fi
+
+        # Check required directories
+        for dir in scripts references assets; do
+          if [ -d "$dir" ]; then
+            echo "✅ Directory $dir exists"
+            echo "Files in $dir:"
+            ls -la $dir/
+          else
+            echo "⚠️ Directory $dir missing"
+          fi
+        done
+
+    - name: Check Python scripts syntax
+      run: |
+        echo "Checking Python script syntax..."
+        for script in scripts/*.py; do
+          if [ -f "$script" ]; then
+            python -m py_compile "$script"
+            echo "✅ $script syntax OK"
+          fi
+        done
+
+    - name: Update documentation
+      run: |
+        echo "Updating documentation..."
+        date > docs/last_updated.txt
+        echo "# Quality Problem Expert Skill" > docs/README.md
+        echo "" >> docs/README.md
+        echo "## Last Updated" >> docs/README.md
+        cat docs/last_updated.txt >> docs/README.md
+        echo "" >> docs/README.md
+        echo "## Version" >> docs/README.md
+        echo "v1.0.0" >> docs/README.md
+
+    - name: Auto-commit changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Actions"
+
+        git add .
+        git diff --cached --quiet && echo "No changes to commit" || (
+          git commit -m "docs: Auto-update skill documentation - $(date '+%Y-%m-%d %H:%M:%S')"
+          git push
+        )
+
+    - name: Create skill package
+      run: |
+        echo "Creating skill package..."
+        zip -r quality-problem-expert.zip . -x ".git/*" "*.log" "__pycache__/*" "*.pyc"
+        ls -la quality-problem-expert.zip
+
+    - name: Upload package artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: skill-package
+        path: quality-problem-expert.zip
+        retention-days: 30
+
+    - name: Summary
+      run: |
+        echo "## ✅ Skills Auto-Update Completed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### What was updated:" >> $GITHUB_STEP_SUMMARY
+        echo "- Validated skill structure" >> $GITHUB_STEP_SUMMARY
+        echo "- Checked Python script syntax" >> $GITHUB_STEP_SUMMARY
+        echo "- Updated documentation" >> $GITHUB_STEP_SUMMARY
+        echo "- Created skill package" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Run:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
